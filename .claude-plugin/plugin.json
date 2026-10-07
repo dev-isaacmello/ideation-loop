@@ -1,0 +1,12 @@
+{
+  "name": "ideation-loop",
+  "description": "Pipeline de ideação: gera candidatos com diversidade forçada, colapsa duplicatas, checa anterioridade com busca real e seleciona com avaliador separado do gerador.",
+  "author": {
+    "name": "Isaac Mello",
+    "url": "https://github.com/dev-isaacmello"
+  },
+  "homepage": "https://github.com/dev-isaacmello/ideation-loop",
+  "repository": "https://github.com/dev-isaacmello/ideation-loop",
+  "license": "MIT",
+  "keywords": ["ideation", "brainstorm", "skills", "subagents"]
+}
