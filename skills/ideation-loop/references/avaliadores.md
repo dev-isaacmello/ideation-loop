@@ -6,7 +6,7 @@ Escolha o mais forte disponível, de cima para baixo. Registre no `brief.md` qua
 
 ## Nível 1. Métrica executável
 
-Um script retorna um número e a ideia é implementável em código ou configuração.
+Um script retorna um número e cada candidato é o próprio artefato que o script pontua (uma função, um prompt, uma query, uma configuração). Se o script mede o processo e as ideias são mudanças de processo, é nível 2.
 
 Exemplos: latência p95 de um endpoint, custo em tokens por conversa de um agente, taxa de acerto de um classificador num conjunto rotulado, número de testes passando, tempo de uma query, taxa de conversão simulada sobre histórico.
 

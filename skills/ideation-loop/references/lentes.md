@@ -1,17 +1,17 @@
 # Lentes de geração
 
-Cada lente roda num subagente independente. Para cada uma, escreva `tarefas/<lente>.md` com: o caminho do `brief.md` (para ler inteiro), o caminho do `obvious.jsonl` (rotulado "já pensado, não repita nem varie"), a instrução comum, o bloco "Instrução" da lente, o schema de candidato do SKILL.md, o número de candidatos e o caminho de saída. O subagente pega a tarefa com `claim.py`, como descrito na Fase 2 do SKILL.md.
+Cada lente roda num subagente independente. O `scripts/tasks.py` lê este arquivo e monta a tarefa de cada lente (brief, óbvio, instrução comum, instrução da lente, schema, número de candidatos e arquivo de saída); o subagente pega a tarefa com `claim.py`, como descrito na Fase 2 do SKILL.md. O script copia o primeiro bloco de citação depois de "Instrução comum" e depois de cada "**Instrução:**": mantenha esse formato ao editar.
 
 Ordem de uso por modo:
-- `rapido`: anomalia, analogia, cauda
+- `rapido`: anomalia, analogia, inversao
 - padrão: anomalia, analogia, inversao, restricao, cauda, combinacao
 - `profundo`: todas as sete
 
-Rode `cauda` e `combinacao` com o modelo menor disponível (variância barata), com as tarefas delas em `tarefas-menor/`.
+`cauda` e `combinacao` rodam com o modelo menor disponível (variância barata); o script põe as tarefas delas em `tarefas-menor/`.
 
 Instrução comum a todas as lentes (inclua sempre):
 
-> Você está gerando candidatos para um loop de ideação que vai filtrar depois com busca de anterioridade e testes reais, então não se autocensure por viabilidade nem por soar estranho. Ideias que repetem ou variam levemente o conteúdo de `obvious.jsonl` são desperdício. Cada candidato precisa de mecanismo concreto (o que acontece, quem faz o quê, com qual dado), não de slogan. `teste_barato` precisa ser algo executável em menos de um dia. `criterio_de_morte` precisa ser um resultado observável. O arquivo de saída só contém linhas JSON: nenhum título, comentário ou resumo dentro dele. Confira que cada linha é JSON válido antes de terminar e responda, fora do arquivo, com quantos candidatos escreveu.
+> Você está gerando candidatos para um loop de ideação que vai filtrar depois com busca de anterioridade e testes reais, então não se autocensure por viabilidade nem por soar estranho. Ideias que repetem ou variam levemente o conteúdo de `obvious.jsonl` são desperdício. Cada candidato precisa de mecanismo concreto (o que acontece, quem faz o quê, com qual dado), não de slogan. `teste_barato` precisa ser algo executável em menos de um dia. `criterio_de_morte` precisa ser um resultado observável. O arquivo de saída só contém linhas JSON: nenhum título, comentário ou resumo dentro dele. Listas de trabalho que a lente pedir (premissas, domínios, pares sorteados) ficam em `candidates/<lente>.notas.md`. O `id` é o nome da lente sem sufixo mais um número (`analogia-03`), mesmo quando o campo `lente` leva sufixo (`analogia:seguros`). Confira que cada linha é JSON válido antes de terminar e responda, fora do arquivo, com quantos candidatos escreveu.
 
 ---
 
