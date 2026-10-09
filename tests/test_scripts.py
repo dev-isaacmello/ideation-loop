@@ -111,15 +111,50 @@ class TournamentTest(unittest.TestCase):
         out = json.loads((self.dir / "ranking.json").read_text())
         self.assertEqual([x["id"] for x in out["ranking"]],
                          ["inversao-04", "anomalia-01", "analogia-03", "cauda-02"])
-        self.assertAlmostEqual(out["tau"], 4 / 6)
+        self.assertAlmostEqual(out["tau_lista_inteira"], 4 / 6)
+        # Só um par está no mesmo veredito (as duas não testadas), e os juízes concordam nele.
+        self.assertAlmostEqual(out["tau"], 1.0)
         self.assertEqual(out["inversoes_de_veredito"]["deck1"], 5)
+        self.assertEqual([x["faixa"] for x in out["ranking"]], [1, 2, 3, 4])
         self.assertIn("pv inversao-04", (self.dir / "ranking.md").read_text())
 
-    def test_lista_incompleta_e_recusada(self):
+    def test_juizes_em_desacordo_ficam_na_mesma_faixa(self):
+        self.lista("deck1", ["inversao-04", "anomalia-01", "analogia-03", "cauda-02"])
+        self.lista("deck2", ["inversao-04", "analogia-03", "anomalia-01", "cauda-02"])
+        self.assertEqual(self.agree().returncode, 0)
+        out = json.loads((self.dir / "ranking.json").read_text())
+        self.assertEqual({x["id"]: x["faixa"] for x in out["ranking"]},
+                         {"inversao-04": 1, "analogia-03": 2, "anomalia-01": 2, "cauda-02": 3})
+
+    def test_lista_incompleta_ou_ausente_e_recusada(self):
         self.lista("deck1", ["cauda-02", "anomalia-01", "analogia-03"])
         r = self.agree()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("refazer a lista", r.stderr)
+        self.lista("deck1", ["cauda-02", "anomalia-01", "analogia-03", "inversao-04"])
+        r = self.agree()  # o juiz do deck2 não entregou
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("falta a lista de deck2", r.stderr)
+
+
+class TasksTest(unittest.TestCase):
+    def test_tarefas_por_modo_com_anomalia_dividida(self):
+        d = Path(tempfile.mkdtemp())
+        r = run("tasks.py", d, "--modo", "padrao", "--areas", "código", "dados")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(p.name for p in (d / "tarefas").iterdir()),
+                         ["01-anomalia-1.md", "01-anomalia-2.md", "02-analogia.md", "03-inversao.md",
+                          "04-restricao.md"])
+        self.assertEqual(sorted(p.name for p in (d / "tarefas-menor").iterdir()),
+                         ["05-cauda.md", "06-combinacao.md"])
+        anomalia = (d / "tarefas" / "01-anomalia-2.md").read_text()
+        self.assertIn("Gere 6 candidatos", anomalia)
+        self.assertIn("só esta: dados", anomalia)
+        self.assertIn("criterio_de_morte", anomalia)
+        self.assertIn("surpreendente", anomalia)  # veio a instrução da lente, de lentes.md
+        self.assertNotIn("<skill>", (d / "tarefas-menor" / "06-combinacao.md").read_text())
+        # a primeira tarefa entregue é a da anomalia, que é a mais lenta
+        self.assertIn("anomalia-1", run("claim.py", d / "tarefas").stdout)
 
 
 class ClaimTest(unittest.TestCase):
