@@ -24,6 +24,8 @@ from collections import Counter
 from pathlib import Path
 
 REQUIRED = ("titulo", "mecanismo")
+SAME_LENS = 0.5
+MECH = 220  # caracteres do mecanismo mostrados na fila: basta para decidir e não incha o arquivo
 MARK = re.compile(r"^- \[(x|X| )\] `([^`]+)` ~ `([^`]+)`")
 
 STOPWORDS = set("""
@@ -103,6 +105,24 @@ def cosine(u, v):
     return sum(x * v.get(t, 0.0) for t, x in u.items())
 
 
+def neighbor_pairs(cands, vecs, k):
+    """Fila de suspeitos: os k vizinhos de cada candidato, {(id_a, id_b): similaridade}.
+
+    Por candidato, e não os pares mais parecidos da rodada: um teto global concentra a fila
+    nos grupos grandes e deixa as duplicatas dos pequenos sem par.
+    """
+    lentes = [c.get("lente", "").split(":")[0] for c in cands]
+    pairs = {}
+    for i, v in enumerate(vecs):
+        # Duplicata quase sempre vem de lentes diferentes: uma lente roda num agente só, que
+        # não se repete. Par da mesma lente vale metade para não ocupar a vaga de um vizinho.
+        sims = sorted(((cosine(v, w) * (SAME_LENS if lentes[i] == lentes[j] else 1.0), j)
+                       for j, w in enumerate(vecs) if j != i), reverse=True)
+        for s, j in sims[:k]:
+            pairs[tuple(sorted((cands[i]["id"], cands[j]["id"])))] = s
+    return pairs
+
+
 def write_jsonl(path, items):
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(json.dumps(item, ensure_ascii=False) + "\n" for item in items)
@@ -128,13 +148,7 @@ def cmd_queue(args):
         item["obvio_mais_proximo"] = best[1]
         item["perto_do_obvio"] = False
 
-    # Os k vizinhos de cada candidato, e não os pares mais parecidos da rodada: um teto global
-    # concentra a fila nos grupos grandes e deixa as duplicatas dos pequenos sem par.
-    pairs = {}
-    for i, v in enumerate(cvecs):
-        sims = sorted(((cosine(v, w), j) for j, w in enumerate(cvecs) if j != i), reverse=True)
-        for s, j in sims[: args.k]:
-            pairs[tuple(sorted((cands[i]["id"], cands[j]["id"])))] = s
+    pairs = neighbor_pairs(cands, cvecs, args.k)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -152,15 +166,16 @@ def cmd_queue(args):
         "",
         "Marque `[x]` nos pares que são a mesma ideia e rode `cluster.py merge`. A ordem é por",
         "similaridade lexical, que deixa escapar ideias iguais com palavras diferentes: se achar",
-        "uma duplicata fora da fila, acrescente a linha no mesmo formato.",
+        "uma duplicata fora da fila, acrescente uma linha `- [x] `id-a` ~ `id-b`` (o número entre",
+        "parênteses é só informativo e pode faltar).",
         "",
         "## Entre candidatos",
         "",
     ]
     for (a, b), s in sorted(pairs.items(), key=lambda kv: -kv[1]):
         lines.append(f"- [ ] `{a}` ~ `{b}` ({s:.2f})")
-        lines.append(f"  - {by_id[a]['titulo']}")
-        lines.append(f"  - {by_id[b]['titulo']}")
+        lines.append(f"  - {by_id[a]['titulo']}: {by_id[a]['mecanismo'][:MECH]}")
+        lines.append(f"  - {by_id[b]['titulo']}: {by_id[b]['mecanismo'][:MECH]}")
     if obvious:
         lines += ["", "## Contra o óbvio", "",
                   "Marque `[x]` quando o candidato for a ideia de consenso com outra redação.", ""]
