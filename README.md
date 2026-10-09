@@ -8,14 +8,14 @@ Pedir ideias a um LLM numa passada devolve o consenso da área, e o modelo julga
 
 | Fase | O que acontece |
 |---|---|
-| 0. Brief | Problema operacional, fatos privados do projeto (schema, logs, métricas) e o avaliador, definido antes de gerar |
-| 1. Óbvio | 15 a 20 ideias de consenso, usadas como régua de distância |
+| 0. Brief | Problema operacional, objetivo (novidade ou melhoria), fatos privados do projeto (schema, logs, métricas) e o avaliador, definido antes de gerar |
+| 1. Óbvio | 15 a 20 ideias de consenso: régua de distância quando o objetivo é novidade, concorrentes quando é melhoria |
 | 2. Geração | Um subagente independente por lente (anomalia, analogia, inversão, restrição, cauda, combinação, extremo) |
-| 3. Dedup | `cluster.py` agrupa por TF-IDF e marca o que ficou perto do óbvio |
+| 3. Dedup | `cluster.py` monta a fila de pares suspeitos, o agente confirma e o script funde; fatos novos achados pelas lentes vão para `facts.jsonl` |
 | 4. Anterioridade | 2 a 3 buscas na web por sobrevivente, com links ou queries registradas |
-| 5. Realidade | Executa o teste barato de cada ideia: query, script, protótipo, cálculo de custo |
-| 6. Torneio | Juiz que não gerou compara par a par, ranking por Bradley-Terry (`tournament.py`) |
-| 7. Mutação | Variações dos finalistas competem com os pais |
+| 5. Realidade | Executa o teste barato de cada ideia (query, script, protótipo, cálculo de custo) e grava o veredito |
+| 6. Julgamento | Dois juízes que não geraram ordenam baralhos cegos; `tournament.py` cruza as listas, mede a concordância e ordena pelo veredito de evidência |
+| 7. Mutação | Variações dos finalistas, a partir do que os juízes disseram que faria cada um subir, competem com os pais |
 | 8. Relatório | Top 3 a 5 com evidência, anterioridade, próximo teste e critério de morte |
 
 Há também um modo evolutivo para problemas com métrica executável (latência, custo, acurácia): população de candidatos, avaliador automático com holdout, seleção e mutação.
@@ -80,10 +80,17 @@ Modos: `rapido` (3 lentes), padrão (6 lentes, 1 rodada de mutação), `profundo
 ## Limites
 
 - A skill não prova que uma ideia é inédita. O máximo que ela afirma é "não encontrado nestas N buscas".
-- O agrupamento de duplicatas é lexical. Ideias iguais escritas com palavras diferentes podem escapar, por isso existe uma revisão manual na fase 3.
+- A fila de duplicatas é lexical e só propõe pares. Quem decide se duas ideias são a mesma é o agente, e ideias iguais escritas com palavras muito diferentes podem ficar fora da fila.
+- O ranking segue o veredito de evidência, e quem escolhe o que testar é o agente. A ordem dos testes pesa no resultado.
 - Sem avaliador melhor que opinião, o ranking é hipótese, e o relatório diz isso.
-- Gasta tokens: o modo padrão dispara seis subagentes de geração, além de busca, juiz e mutação.
+- Gasta tokens: o modo padrão dispara seis subagentes de geração, além de busca e juízes. Os subagentes de cada fase usam o mesmo prompt e largam em duas levas para reaproveitar o cache do contexto inicial.
 - As instruções da skill estão em português.
+
+## Testes
+
+```bash
+python3 -m unittest discover tests
+```
 
 ## Licença
 

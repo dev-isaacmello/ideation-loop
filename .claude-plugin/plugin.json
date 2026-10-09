@@ -1,5 +1,6 @@
 {
   "name": "ideation-loop",
+  "version": "1.1.0",
   "description": "Pipeline de ideação: gera candidatos com diversidade forçada, colapsa duplicatas, checa anterioridade com busca real e seleciona com avaliador separado do gerador.",
   "author": {
     "name": "Isaac Mello",
