@@ -18,7 +18,7 @@ A ideia faz uma previsão que pode ser checada no que já aconteceu.
 
 Exemplos: "usuários que fazem X na primeira semana retêm mais" vira uma query de coorte; "horários ociosos se concentram em Y" vira uma agregação; "uma regra de priorização teria evitado Z" vira replay da regra sobre o log.
 
-Formato do teste em `evidence/<id>.md`: hipótese, query ou script exato (somente leitura), resultado bruto, leitura do resultado, veredito. Se o resultado for ambíguo, diga ambíguo.
+Formato do teste em `evidence/<id>.md`: a linha `veredito:` (vocabulário da Fase 5 do SKILL.md), hipótese, query ou script exato (somente leitura), resultado bruto e leitura do resultado. Se o resultado for ambíguo, diga ambíguo.
 
 Cuidados: amostras pequenas, sobrevivência, correlação em vez de causa. Escreva o tamanho da amostra junto do resultado.
 
@@ -34,7 +34,7 @@ Entrevista com 5 clientes, landing page, mensagem para uma base pequena. O loop 
 
 ## Nível 5. Juízo estruturado (último recurso)
 
-Quando nada acima é possível, o torneio cego da Fase 6 com critérios explícitos é o avaliador. Declare no relatório que a seleção foi por juízo, não por evidência, e trate o ranking como hipótese a testar.
+Quando nada acima é possível, todas as ideias ficam com o mesmo veredito (`nao_testada`) e o julgamento em lista cega da Fase 6 é o avaliador inteiro. Declare no relatório que a seleção foi por juízo, não por evidência, informe a concordância entre os juízes e trate o ranking como hipótese a testar.
 
 ## Custos que contam como evidência
 

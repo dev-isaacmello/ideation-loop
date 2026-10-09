@@ -1,17 +1,17 @@
 # Lentes de geração
 
-Cada lente é um prompt para um subagente independente. Copie o bloco "Instrução" da lente para o prompt do subagente, junto com: o `brief.md` completo, o `obvious.jsonl` (rotulado "já pensado, não repita nem varie"), o número de candidatos e o caminho de saída. Todas as lentes usam o schema de candidato do SKILL.md.
+Cada lente roda num subagente independente. Para cada uma, escreva `tarefas/<lente>.md` com: o caminho do `brief.md` (para ler inteiro), o caminho do `obvious.jsonl` (rotulado "já pensado, não repita nem varie"), a instrução comum, o bloco "Instrução" da lente, o schema de candidato do SKILL.md, o número de candidatos e o caminho de saída. O subagente pega a tarefa com `claim.py`, como descrito na Fase 2 do SKILL.md.
 
 Ordem de uso por modo:
 - `rapido`: anomalia, analogia, cauda
 - padrão: anomalia, analogia, inversao, restricao, cauda, combinacao
 - `profundo`: todas as sete
 
-Rode `cauda` e `combinacao` com o modelo menor disponível (variância barata).
+Rode `cauda` e `combinacao` com o modelo menor disponível (variância barata), com as tarefas delas em `tarefas-menor/`.
 
 Instrução comum a todas as lentes (inclua sempre):
 
-> Você está gerando candidatos para um loop de ideação que vai filtrar depois com busca de anterioridade e testes reais, então não se autocensure por viabilidade nem por soar estranho. Ideias que repetem ou variam levemente o conteúdo de `obvious.jsonl` são desperdício. Cada candidato precisa de mecanismo concreto (o que acontece, quem faz o quê, com qual dado), não de slogan. `teste_barato` precisa ser algo executável em menos de um dia. `criterio_de_morte` precisa ser um resultado observável. Escreva o arquivo JSONL e termine com uma linha resumindo quantos candidatos escreveu.
+> Você está gerando candidatos para um loop de ideação que vai filtrar depois com busca de anterioridade e testes reais, então não se autocensure por viabilidade nem por soar estranho. Ideias que repetem ou variam levemente o conteúdo de `obvious.jsonl` são desperdício. Cada candidato precisa de mecanismo concreto (o que acontece, quem faz o quê, com qual dado), não de slogan. `teste_barato` precisa ser algo executável em menos de um dia. `criterio_de_morte` precisa ser um resultado observável. O arquivo de saída só contém linhas JSON: nenhum título, comentário ou resumo dentro dele. Confira que cada linha é JSON válido antes de terminar e responda, fora do arquivo, com quantos candidatos escreveu.
 
 ---
 
@@ -20,7 +20,7 @@ Instrução comum a todas as lentes (inclua sempre):
 Parte do sinal privado. É a lente que mais produz ideia que não existe, porque usa fatos que nenhum modelo viu no treino.
 
 **Instrução:**
-> Leia os fatos do brief marcados `[verificado]`. Para cada fato, pergunte: o que é surpreendente aqui? O que este padrão revela sobre o usuário que ele mesmo não diria? Que comportamento já existe e está sendo ignorado pelo produto? Gere candidatos que exploram diretamente um fato surpreendente, citando o fato em `dado_usado`. Se o brief tiver poucos fatos verificados e você tiver acesso ao projeto, investigue (schema, logs, queries agregadas somente leitura) e registre o fato novo no início do seu arquivo como um candidato com `"lente": "fato"`.
+> Leia os fatos do brief marcados `[verificado]`. Para cada fato, pergunte: o que é surpreendente aqui? O que este padrão revela sobre o usuário que ele mesmo não diria? Que comportamento já existe e está sendo ignorado pelo produto? Gere candidatos que exploram diretamente um fato surpreendente, citando o fato em `dado_usado`. Se você tiver acesso ao projeto, investigue (schema, logs, código, queries agregadas somente leitura) atrás de fatos que o brief não tem ou que o contradizem. Grave cada fato novo no seu arquivo como uma linha própria, `{"fato": "o fato, com número", "como_verificou": "comando ou arquivo"}`, e cite-o em `dado_usado` nos candidatos que ele sustenta.
 
 ## analogia
 
@@ -48,7 +48,7 @@ Restrições extremas forçam soluções fora do repertório.
 Verbalized sampling: pedir a distribuição explícita reduz o colapso para a resposta típica.
 
 **Instrução:**
-> Para o problema do brief, gere ideias em lotes de 5. Para cada ideia, estime a probabilidade de um especialista da área sugeri-la espontaneamente (0 a 1) e preencha `p_verbalizada`. Mantenha no arquivo apenas as ideias com `p_verbalizada` abaixo de 0.10. Continue gerando lotes até atingir o número de candidatos pedido. Ideias de baixa probabilidade não precisam ser absurdas: precisam ser plausíveis e pouco prováveis de ocorrer a alguém.
+> Para o problema do brief, gere ideias em lotes de 5. Para cada ideia, estime a probabilidade de um especialista da área sugeri-la espontaneamente (0 a 1) e grave no campo extra `p_verbalizada`. Mantenha no arquivo apenas as ideias com `p_verbalizada` abaixo de 0.10. Continue gerando lotes até atingir o número de candidatos pedido. Ideias de baixa probabilidade não precisam ser absurdas: precisam ser plausíveis e pouco prováveis de ocorrer a alguém.
 
 ## combinacao
 
