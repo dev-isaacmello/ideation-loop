@@ -1,20 +1,44 @@
 #!/usr/bin/env python3
-"""Torneio par a par para ranquear ideias.
+"""Julgamento em lista cega para ranquear ideias.
 
-Gerar pareamentos:
-  tournament.py pairs survivors.jsonl --rounds 4 --out pairs.jsonl [--seed 7]
+Gerar os baralhos (uma tarefa por juiz, para entregar com claim.py):
+  tournament.py decks survivors.jsonl --evidence evidence/ --brief brief.md --out juiz [--n 2] [--seed 7]
 
-Ranquear a partir dos resultados do juiz (matches.jsonl com a, b, vencedor, motivo):
-  tournament.py rank matches.jsonl --survivors survivors.jsonl --out ranking.md
+Cruzar as listas dos juízes e montar o ranking:
+  tournament.py agree juiz --survivors survivors.jsonl --evidence evidence/ --out ranking.md
 
-O ranking usa Bradley-Terry em vez de Elo porque não depende da ordem das partidas.
+Cada baralho traz as mesmas ideias com ids neutros e ordem próprios, e a evidência embutida.
+O juiz devolve uma lista ordenada. Pedir pares não funciona: o juiz ordena tudo de uma vez e
+deriva os pares, e o sorteio dos confrontos só acrescenta ruído. O ranking final respeita o
+veredito de evidência de cada ideia; os juízes decidem a ordem dentro do mesmo veredito.
 """
 import argparse
+import itertools
 import json
 import random
+import re
 import sys
-from collections import defaultdict
 from pathlib import Path
+
+# Do mais forte para o mais fraco. Veredito ausente ou desconhecido conta como nao_testada.
+VERDICTS = ("sustentada", "parcial", "fraca", "nao_testada", "morta")
+LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+TASK = """Você é JUIZ de ideias e não participou da geração. Leia inteiro o brief em {brief}
+(problema, fatos, restrições, avaliador) e as {n} ideias abaixo. Não leia nenhum outro arquivo
+do diretório da rodada.
+
+Ordene as {n} ideias da melhor para a pior. Critérios, nesta ordem: (1) força da evidência
+registrada; (2) alavancagem sobre o sinal privado do brief; (3) custo para testar de verdade;
+(4) tamanho do ganho se der certo. Novidade não é critério.
+
+Escreva {out} com exatamente {n} linhas JSON, da 1ª à {n}ª posição:
+{{"posicao": 1, "id": "<código>", "motivo": "por que está nesta posição, uma frase", "maior_risco": "uma frase", "para_vencer": "a mudança concreta na ideia que a faria subir, uma frase"}}
+Não edite mais nada. Responda no fim só com os códigos em ordem, separados por vírgula.
+
+---
+
+"""
 
 
 def read_jsonl(path):
@@ -28,124 +52,156 @@ def read_jsonl(path):
     return out
 
 
-def cmd_pairs(args):
+def evidence_of(evidence_dir, idea_id):
+    if not evidence_dir:
+        return ""
+    root = Path(evidence_dir).resolve()
+    path = (root / f"{idea_id}.md").resolve()
+    if path.parent != root:  # o id vem da saída de um agente e não pode apontar para fora
+        sys.exit(f"id {idea_id!r} aponta para fora de {root}: corrija o id em survivors.jsonl")
+    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+
+
+def verdict_of(text):
+    m = re.search(r"^\s*veredito:\s*([a-zA-Z_]+)", text, re.MULTILINE)
+    v = m.group(1).lower() if m else "nao_testada"
+    return v if v in VERDICTS else "nao_testada"
+
+
+def cmd_decks(args):
     items = read_jsonl(args.survivors)
-    if args.skip_obvious:
-        items = [x for x in items if not x.get("perto_do_obvio")]
+    if len(items) < 2:
+        sys.exit("menos de 2 ideias, nada a ordenar")
     ids = [x["id"] for x in items]
-    titles = {x["id"]: x.get("titulo", "") for x in items}
-    if len(ids) < 2:
-        sys.exit("menos de 2 ideias, nada a comparar")
+    # O id original carrega a lente (anomalia-06) e outras ideias aparecem citadas na evidência.
+    id_pattern = re.compile("|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True)))
+    out = Path(args.out)
+    tasks = out / "tarefas"
+    tasks.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
-    played, pairs = set(), []
-    for _ in range(args.rounds):
-        # Tenta algumas permutações para evitar repetir confrontos já jogados.
-        best = None
-        for _ in range(50):
-            order = ids[:]
-            rng.shuffle(order)
-            if len(order) % 2:
-                order.append(rng.choice(order[:-1]))
-            cand = [tuple(sorted(order[i:i + 2])) for i in range(0, len(order), 2)]
-            repeats = sum(p in played for p in cand)
-            if best is None or repeats < best[0]:
-                best = (repeats, cand)
-            if repeats == 0:
-                break
-        for p in best[1]:
-            played.add(p)
-            a, b = list(p)
-            if rng.random() < 0.5:  # ordem aleatória reduz viés de posição do juiz
-                a, b = b, a
-            pairs.append({"a": a, "b": b, "a_titulo": titles[a], "b_titulo": titles[b]})
-    with open(args.out, "w", encoding="utf-8") as f:
-        for p in pairs:
-            f.write(json.dumps(p, ensure_ascii=False) + "\n")
-    print(f"{len(pairs)} confrontos para {len(ids)} ideias em {args.rounds} rodadas -> {args.out}")
+    mapping = {}
+    for k in range(1, args.n + 1):
+        order = items[:]
+        rng.shuffle(order)
+        codes = rng.sample([a + b for a in LETTERS for b in LETTERS], len(order))
+        blocks = []
+        for code, item in zip(codes, order):
+            mapping[f"deck{k}:{code}"] = item["id"]
+            ev = evidence_of(args.evidence, item["id"]) or "veredito: nao_testada"
+            ev = re.sub(r"^#.*\n+", "", ev)  # o título do arquivo repete o id
+            text = (f"## {code}: {item.get('titulo', '')}\n\nMecanismo: {item.get('mecanismo', '')}\n\n"
+                    f"Evidência: {ev}\n")
+            blocks.append(id_pattern.sub("(outra ideia)", text))
+        head = TASK.format(brief=Path(args.brief).resolve(), n=len(order),
+                           out=(out / f"lista_deck{k}.jsonl").resolve())
+        (tasks / f"deck{k}.md").write_text(head + "\n".join(blocks), encoding="utf-8")
+    (out / "mapa.json").write_text(json.dumps(mapping, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"{args.n} baralhos de {len(ids)} ideias -> {tasks}")
+    print(f"prompt de cada juiz: rode `python3 {Path(__file__).resolve().parent / 'claim.py'} "
+          f"{tasks.resolve()}` e siga o que ele imprimir")
 
 
-def bradley_terry(matches, ids, iters=500):
-    wins = defaultdict(float)
-    games = defaultdict(float)
-    for m in matches:
-        a, b, w = m["a"], m["b"], m["vencedor"]
-        wins[w] += 1
-        games[tuple(sorted((a, b)))] += 1
-    # Prior: cada ideia empata uma partida virtual contra um oponente fixo de força 1.
-    # Sem isso, quem vence tudo tem força infinita e quem perde tudo, zero.
-    strength = {i: 1.0 for i in ids}
-    for _ in range(iters):
-        new = {}
-        for i in ids:
-            denom = 1.0 / (strength[i] + 1.0)
-            for (x, y), n in games.items():
-                if i in (x, y):
-                    j = y if i == x else x
-                    denom += n / (strength[i] + strength[j])
-            new[i] = (wins[i] + 0.5) / denom
-        mean = sum(new.values()) / len(new)
-        strength = {i: v / mean for i, v in new.items()}
-    return strength
+def kendall_tau(a, b):
+    pa = {x: i for i, x in enumerate(a)}
+    pb = {x: i for i, x in enumerate(b)}
+    conc = disc = 0
+    for x, y in itertools.combinations(a, 2):
+        s = (pa[x] - pa[y]) * (pb[x] - pb[y])
+        conc += s > 0
+        disc += s < 0
+    return (conc - disc) / (conc + disc) if conc + disc else 1.0
 
 
-def cmd_rank(args):
-    matches = read_jsonl(args.matches)
+def cmd_agree(args):
+    jdir = Path(args.dir)
+    mapping = json.loads((jdir / "mapa.json").read_text(encoding="utf-8"))
     surv = {x["id"]: x for x in read_jsonl(args.survivors)} if args.survivors else {}
-    valid = []
-    for m in matches:
-        if m.get("vencedor") not in (m.get("a"), m.get("b")):
-            print(f"[aviso] vencedor inválido em {m}, ignorado", file=sys.stderr)
-            continue
-        valid.append(m)
-    if not valid:
-        sys.exit("nenhuma partida válida")
-    ids = sorted({m["a"] for m in valid} | {m["b"] for m in valid})
-    strength = bradley_terry(valid, ids)
-    record = {i: [0, 0] for i in ids}
-    reasons = defaultdict(list)
-    for m in valid:
-        loser = m["b"] if m["vencedor"] == m["a"] else m["a"]
-        record[m["vencedor"]][0] += 1
-        record[loser][1] += 1
-        if m.get("motivo"):
-            reasons[m["vencedor"]].append(m["motivo"])
-    ranked = sorted(ids, key=lambda i: -strength[i])
+    expected = sorted(set(mapping.values()))
+    lists, cards = {}, {}
+    for path in sorted(jdir.glob("lista_deck*.jsonl")):
+        deck = path.stem.replace("lista_", "")
+        rows = sorted(read_jsonl(path), key=lambda r: r.get("posicao", 0))
+        try:
+            order = [mapping[f"{deck}:{r['id']}"] for r in rows]
+        except KeyError as e:
+            sys.exit(f"{path}: código {e} não existe em {deck}; o juiz precisa refazer a lista")
+        if sorted(order) != expected:
+            sys.exit(f"{path}: a lista precisa ter cada uma das {len(expected)} ideias exatamente uma vez "
+                     f"(veio com {len(order)} linhas); o juiz precisa refazer a lista")
+        lists[deck] = order
+        cards[deck] = {mapping[f"{deck}:{r['id']}"]: r for r in rows}
+    if not lists:
+        sys.exit(f"nenhuma lista_deck*.jsonl em {jdir}")
 
-    lines = ["# Ranking", "", f"Partidas válidas: {len(valid)} | Ideias: {len(ids)}", "",
-             "| # | id | título | V-D | força |", "|---|---|---|---|---|"]
+    verdict = {i: verdict_of(evidence_of(args.evidence, i)) for i in expected}
+    stratum = {i: VERDICTS.index(verdict[i]) for i in expected}
+    mean_pos = {i: sum(l.index(i) for l in lists.values()) / len(lists) for i in expected}
+    ranked = sorted(expected, key=lambda i: (stratum[i], mean_pos[i]))
+
+    decks = sorted(lists)
+    taus = [kendall_tau(lists[a], lists[b]) for a, b in itertools.combinations(decks, 2)]
+    tau = sum(taus) / len(taus) if taus else None
+    inversions = {d: sum(1 for x, y in itertools.combinations(lists[d], 2) if stratum[x] > stratum[y])
+                  for d in decks}
+
+    lines = ["# Ranking", "", f"Juízes: {len(decks)} | Ideias: {len(expected)}", ""]
+    if tau is None:
+        lines.append("Um juiz só: não há como medir concordância. Trate a ordem dentro de cada veredito "
+                     "como hipótese.")
+    else:
+        lines.append(f"Concordância entre juízes (tau de Kendall, de -1 a 1): {tau:.2f}")
+        if tau < 0.5:
+            lines.append("**Concordância baixa**: os juízes ordenaram de formas bem diferentes. "
+                         "Trate a ordem dentro de cada veredito como hipótese.")
+    lines.append("Ideias ordenadas pelo juiz contra o veredito de evidência: "
+                 + ", ".join(f"{d} {n} pares" for d, n in inversions.items()))
+    lines += ["", ("A ordem abaixo segue o veredito de evidência; dentro do mesmo veredito, a posição "
+                   "média dos juízes."), "",
+              "| # | id | veredito | " + " | ".join(decks) + " | título |",
+              "|---|---|---|" + "---|" * len(decks) + "---|"]
     for pos, i in enumerate(ranked, 1):
-        t = surv.get(i, {}).get("titulo", "")
-        lines.append(f"| {pos} | `{i}` | {t} | {record[i][0]}-{record[i][1]} | {strength[i]:.2f} |")
-    lines += ["", "## Motivos das vitórias (top 5)", ""]
-    for i in ranked[:5]:
-        lines.append(f"**{i}**")
-        lines += [f"- {r}" for r in reasons[i]] or ["- (sem motivo registrado)"]
+        places = " | ".join(str(lists[d].index(i) + 1) for d in decks)
+        lines.append(f"| {pos} | `{i}` | {verdict[i]} | {places} | {surv.get(i, {}).get('titulo', '')} |")
+    lines += ["", "## Fichas das 4 primeiras", "",
+              "`para_vencer` é o insumo da rodada de mutação.", ""]
+    for i in ranked[:4]:
+        lines.append(f"**{i}** {surv.get(i, {}).get('titulo', '')}")
+        for d in decks:
+            c = cards[d][i]
+            lines.append(f"- {d}, motivo: {c.get('motivo', '')}")
+            lines.append(f"- {d}, maior risco: {c.get('maior_risco', '')}")
+            lines.append(f"- {d}, para vencer: {c.get('para_vencer', '')}")
         lines.append("")
     Path(args.out).write_text("\n".join(lines), encoding="utf-8")
     json_out = Path(args.out).with_suffix(".json")
     json_out.write_text(json.dumps(
-        [{"id": i, "forca": round(strength[i], 4), "vitorias": record[i][0], "derrotas": record[i][1]} for i in ranked],
+        {"tau": tau, "inversoes_de_veredito": inversions,
+         "ranking": [{"id": i, "veredito": verdict[i],
+                      "posicoes": {d: lists[d].index(i) + 1 for d in decks}} for i in ranked]},
         ensure_ascii=False, indent=2), encoding="utf-8")
     for pos, i in enumerate(ranked[:5], 1):
-        print(f"{pos}. {i} ({record[i][0]}-{record[i][1]}, força {strength[i]:.2f})")
+        print(f"{pos}. {i} ({verdict[i]}, posição média {mean_pos[i] + 1:.1f})")
+    print("concordância: " + ("um juiz só" if tau is None else f"tau {tau:.2f}"))
     print(f"escrito: {args.out}, {json_out}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("pairs")
-    p.add_argument("survivors")
-    p.add_argument("--rounds", type=int, default=4)
-    p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--skip-obvious", action="store_true", help="exclui itens marcados perto_do_obvio")
-    p.add_argument("--out", required=True)
-    r = sub.add_parser("rank")
-    r.add_argument("matches")
-    r.add_argument("--survivors")
-    r.add_argument("--out", required=True)
+    d = sub.add_parser("decks")
+    d.add_argument("survivors")
+    d.add_argument("--evidence", default=None, help="diretório com evidence/<id>.md")
+    d.add_argument("--brief", required=True)
+    d.add_argument("--out", required=True)
+    d.add_argument("--n", type=int, default=2, help="número de baralhos (um por juiz)")
+    d.add_argument("--seed", type=int, default=7)
+    a = sub.add_parser("agree")
+    a.add_argument("dir", help="diretório gerado por decks, com mapa.json e lista_deck*.jsonl")
+    a.add_argument("--survivors")
+    a.add_argument("--evidence", default=None)
+    a.add_argument("--out", required=True)
     args = ap.parse_args()
-    cmd_pairs(args) if args.cmd == "pairs" else cmd_rank(args)
+    cmd_decks(args) if args.cmd == "decks" else cmd_agree(args)
 
 
 if __name__ == "__main__":
