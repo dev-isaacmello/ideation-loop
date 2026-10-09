@@ -1,3 +1,5 @@
 .ideation/
+# rodadas rotuladas são material de trabalho de projetos reais e não são publicadas
+evals/data/
 __pycache__/
 *.pyc
