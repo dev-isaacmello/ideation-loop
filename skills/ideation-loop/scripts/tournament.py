@@ -101,11 +101,14 @@ def cmd_decks(args):
           f"{tasks.resolve()}` e siga o que ele imprimir")
 
 
-def kendall_tau(a, b):
+def kendall_tau(a, b, group=None):
+    """Tau entre duas ordens. Com `group`, só contam os pares de ideias do mesmo grupo."""
     pa = {x: i for i, x in enumerate(a)}
     pb = {x: i for i, x in enumerate(b)}
     conc = disc = 0
     for x, y in itertools.combinations(a, 2):
+        if group and group[x] != group[y]:
+            continue
         s = (pa[x] - pa[y]) * (pb[x] - pb[y])
         conc += s > 0
         disc += s < 0
@@ -132,6 +135,10 @@ def cmd_agree(args):
         cards[deck] = {mapping[f"{deck}:{r['id']}"]: r for r in rows}
     if not lists:
         sys.exit(f"nenhuma lista_deck*.jsonl em {jdir}")
+    missing = sorted({k.split(":")[0] for k in mapping} - set(lists))
+    if missing and not args.allow_missing:
+        sys.exit(f"falta a lista de {', '.join(missing)}: o juiz não entregou. Dispare de novo ou, para "
+                 f"seguir com menos juízes, passe --allow-missing")
 
     verdict = {i: verdict_of(evidence_of(args.evidence, i)) for i in expected}
     stratum = {i: VERDICTS.index(verdict[i]) for i in expected}
@@ -139,8 +146,20 @@ def cmd_agree(args):
     ranked = sorted(expected, key=lambda i: (stratum[i], mean_pos[i]))
 
     decks = sorted(lists)
-    taus = [kendall_tau(lists[a], lists[b]) for a, b in itertools.combinations(decks, 2)]
+    # Faixa: vizinhas no ranking ficam empatadas quando têm o mesmo veredito e os juízes não
+    # concordam sobre qual das duas vem antes. Posição dentro da faixa não quer dizer nada.
+    band, bands = 1, {}
+    for prev, cur in zip([None] + ranked, ranked):
+        if prev is not None and (stratum[prev] != stratum[cur]
+                                 or all(l.index(prev) < l.index(cur) for l in lists.values())):
+            band += 1
+        bands[cur] = band
+    # A concordância que importa é a de dentro do mesmo veredito: é só ali que o juiz decide.
+    # Medida na lista inteira, ela sai inflada porque todos os juízes seguem a evidência.
+    taus = [kendall_tau(lists[a], lists[b], stratum) for a, b in itertools.combinations(decks, 2)]
     tau = sum(taus) / len(taus) if taus else None
+    taus_all = [kendall_tau(lists[a], lists[b]) for a, b in itertools.combinations(decks, 2)]
+    tau_all = sum(taus_all) / len(taus_all) if taus_all else None
     inversions = {d: sum(1 for x, y in itertools.combinations(lists[d], 2) if stratum[x] > stratum[y])
                   for d in decks}
 
@@ -149,7 +168,8 @@ def cmd_agree(args):
         lines.append("Um juiz só: não há como medir concordância. Trate a ordem dentro de cada veredito "
                      "como hipótese.")
     else:
-        lines.append(f"Concordância entre juízes (tau de Kendall, de -1 a 1): {tau:.2f}")
+        lines.append(f"Concordância entre juízes dentro do mesmo veredito (tau de Kendall, de -1 a 1): "
+                     f"{tau:.2f}. Na lista inteira: {tau_all:.2f}.")
         if tau < 0.5:
             lines.append("**Concordância baixa**: os juízes ordenaram de formas bem diferentes. "
                          "Trate a ordem dentro de cada veredito como hipótese.")
@@ -157,11 +177,13 @@ def cmd_agree(args):
                  + ", ".join(f"{d} {n} pares" for d, n in inversions.items()))
     lines += ["", ("A ordem abaixo segue o veredito de evidência; dentro do mesmo veredito, a posição "
                    "média dos juízes."), "",
-              "| # | id | veredito | " + " | ".join(decks) + " | título |",
+              *(["Ideias na mesma faixa estão empatadas: os juízes não concordam sobre a ordem entre elas.", ""]
+                if len(set(bands.values())) < len(ranked) else []),
+              "| faixa | id | veredito | " + " | ".join(decks) + " | título |",
               "|---|---|---|" + "---|" * len(decks) + "---|"]
-    for pos, i in enumerate(ranked, 1):
+    for i in ranked:
         places = " | ".join(str(lists[d].index(i) + 1) for d in decks)
-        lines.append(f"| {pos} | `{i}` | {verdict[i]} | {places} | {surv.get(i, {}).get('titulo', '')} |")
+        lines.append(f"| {bands[i]} | `{i}` | {verdict[i]} | {places} | {surv.get(i, {}).get('titulo', '')} |")
     lines += ["", "## Fichas das 4 primeiras", "",
               "`para_vencer` é o insumo da rodada de mutação.", ""]
     for i in ranked[:4]:
@@ -175,12 +197,12 @@ def cmd_agree(args):
     Path(args.out).write_text("\n".join(lines), encoding="utf-8")
     json_out = Path(args.out).with_suffix(".json")
     json_out.write_text(json.dumps(
-        {"tau": tau, "inversoes_de_veredito": inversions,
-         "ranking": [{"id": i, "veredito": verdict[i],
+        {"tau": tau, "tau_lista_inteira": tau_all, "inversoes_de_veredito": inversions,
+         "ranking": [{"id": i, "faixa": bands[i], "veredito": verdict[i],
                       "posicoes": {d: lists[d].index(i) + 1 for d in decks}} for i in ranked]},
         ensure_ascii=False, indent=2), encoding="utf-8")
-    for pos, i in enumerate(ranked[:5], 1):
-        print(f"{pos}. {i} ({verdict[i]}, posição média {mean_pos[i] + 1:.1f})")
+    for i in ranked:
+        print(f"faixa {bands[i]}: {i} ({verdict[i]}, posição média {mean_pos[i] + 1:.1f})")
     print("concordância: " + ("um juiz só" if tau is None else f"tau {tau:.2f}"))
     print(f"escrito: {args.out}, {json_out}")
 
@@ -200,6 +222,7 @@ def main():
     a.add_argument("--survivors")
     a.add_argument("--evidence", default=None)
     a.add_argument("--out", required=True)
+    a.add_argument("--allow-missing", action="store_true", help="segue mesmo se faltar a lista de um baralho")
     args = ap.parse_args()
     cmd_decks(args) if args.cmd == "decks" else cmd_agree(args)
 
