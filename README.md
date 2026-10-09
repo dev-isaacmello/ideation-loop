@@ -85,6 +85,7 @@ Modos: `rapido` (3 lentes), padrão (6 lentes, 1 rodada de mutação), `profundo
 - Sem avaliador melhor que opinião, o ranking é hipótese, e o relatório diz isso.
 - Os juízes concordam bem sobre o que tem evidência e só moderadamente sobre a ordem de ideias com o mesmo nível de evidência. O `ranking.md` mostra esse número.
 - Gasta tokens: o modo padrão dispara seis subagentes de geração, além de busca e juízes. Os subagentes de cada fase usam o mesmo prompt e largam em duas levas para reaproveitar o cache do contexto inicial.
+- Texto de página da web e de arquivo do projeto entra no contexto dos agentes. A skill manda tratar esse conteúdo como dado e não levar dado privado para a busca, mas isso é instrução ao modelo, não isolamento: rode com as permissões que você daria a um agente lendo esse mesmo material.
 - As instruções da skill estão em português.
 
 ## Testes
