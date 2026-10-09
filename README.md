@@ -10,11 +10,11 @@ Pedir ideias a um LLM numa passada devolve o consenso da área, e o modelo julga
 |---|---|
 | 0. Brief | Problema operacional, objetivo (novidade ou melhoria), fatos privados do projeto (schema, logs, métricas) e o avaliador, definido antes de gerar |
 | 1. Óbvio | 15 a 20 ideias de consenso: régua de distância quando o objetivo é novidade, concorrentes quando é melhoria |
-| 2. Geração | Um subagente independente por lente (anomalia, analogia, inversão, restrição, cauda, combinação, extremo) |
+| 2. Geração | Um subagente independente por lente (anomalia, analogia, inversão, restrição, cauda, combinação, extremo); `tasks.py` monta as tarefas e `claim.py` as entrega |
 | 3. Dedup | `cluster.py` monta a fila de pares suspeitos, o agente confirma e o script funde; fatos novos achados pelas lentes vão para `facts.jsonl` |
 | 4. Anterioridade | 2 a 3 buscas na web por sobrevivente, com links ou queries registradas |
 | 5. Realidade | Executa o teste barato de cada ideia (query, script, protótipo, cálculo de custo) e grava o veredito |
-| 6. Julgamento | Dois juízes que não geraram ordenam baralhos cegos; `tournament.py` cruza as listas, mede a concordância e ordena pelo veredito de evidência |
+| 6. Julgamento | Dois juízes que não geraram, de modelos diferentes, ordenam baralhos cegos; `tournament.py` cruza as listas, ordena pelo veredito de evidência e declara empate onde os juízes discordam |
 | 7. Mutação | Variações dos finalistas, a partir do que os juízes disseram que faria cada um subir, competem com os pais |
 | 8. Relatório | Top 3 a 5 com evidência, anterioridade, próximo teste e critério de morte |
 
@@ -83,14 +83,18 @@ Modos: `rapido` (3 lentes), padrão (6 lentes, 1 rodada de mutação), `profundo
 - A fila de duplicatas é lexical e só propõe pares. Quem decide se duas ideias são a mesma é o agente, e ideias iguais escritas com palavras muito diferentes podem ficar fora da fila.
 - O ranking segue o veredito de evidência, e quem escolhe o que testar é o agente. A ordem dos testes pesa no resultado.
 - Sem avaliador melhor que opinião, o ranking é hipótese, e o relatório diz isso.
+- Os juízes concordam bem sobre o que tem evidência e só moderadamente sobre a ordem de ideias com o mesmo nível de evidência. O `ranking.md` mostra esse número.
 - Gasta tokens: o modo padrão dispara seis subagentes de geração, além de busca e juízes. Os subagentes de cada fase usam o mesmo prompt e largam em duas levas para reaproveitar o cache do contexto inicial.
 - As instruções da skill estão em português.
 
 ## Testes
 
 ```bash
-python3 -m unittest discover tests
+python3 -m unittest discover tests   # scripts
+python3 evals/dedup.py                # fila de duplicatas contra as suas rodadas rotuladas
 ```
+
+`evals/dedup.py` mede quantas duplicatas reais ficam ao alcance de quem revisa a fila. Os dados não vêm no repositório, porque rodadas reais carregam detalhe do projeto de quem rodou: o cabeçalho do script diz o formato para usar as suas. Dois rotuladores discordam bastante sobre o que é duplicata, então diferença pequena de score é ruído.
 
 ## Licença
 
