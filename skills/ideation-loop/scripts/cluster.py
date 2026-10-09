@@ -78,6 +78,10 @@ def load_jsonl(paths, label):
                 print(f"[aviso] {path}:{n} sem {missing}, ignorado", file=sys.stderr)
                 continue
             base = str(item.get("id") or f"{Path(path).stem}-{n}")
+            if "/" in base or "\\" in base:  # o id vira nome de arquivo em evidence/<id>.md
+                bad += 1
+                print(f"[aviso] {path}:{n} id com separador de caminho, ignorado: {base[:60]!r}", file=sys.stderr)
+                continue
             seen[base] += 1
             item["id"] = base if seen[base] == 1 else f"{base}~{seen[base]}"
             item.setdefault("lente", Path(path).stem if label == "candidato" else "obvio")

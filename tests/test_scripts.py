@@ -64,6 +64,31 @@ class ClusterTest(unittest.TestCase):
         self.assertTrue(surv["anomalia-02"]["perto_do_obvio"])
 
 
+class IdForaDoWorkspaceTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        (self.dir / "fora.md").write_text("SEGREDO", encoding="utf-8")
+        (self.dir / "ws" / "evidence").mkdir(parents=True)
+        (self.dir / "ws" / "brief.md").write_text("# Brief\n", encoding="utf-8")
+        self.linhas = "\n".join([cand("../../fora", "Ideia a", "Mecanismo a."), cand("cauda-02", "Ideia b", "Mecanismo b.")])
+
+    def test_cluster_ignora_id_com_separador(self):
+        (self.dir / "ws" / "a.jsonl").write_text(self.linhas, encoding="utf-8")
+        r = run("cluster.py", "queue", self.dir / "ws" / "a.jsonl", "--out", self.dir / "ws")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("separador de caminho", r.stderr)
+        ids = [json.loads(l)["id"] for l in (self.dir / "ws" / "survivors.jsonl").read_text().splitlines()]
+        self.assertEqual(ids, ["cauda-02"])
+
+    def test_baralho_recusa_evidencia_fora_do_diretorio(self):
+        (self.dir / "ws" / "survivors.jsonl").write_text(self.linhas, encoding="utf-8")
+        r = run("tournament.py", "decks", self.dir / "ws" / "survivors.jsonl", "--evidence", self.dir / "ws" / "evidence",
+                "--brief", self.dir / "ws" / "brief.md", "--out", self.dir / "ws" / "juiz")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("aponta para fora", r.stderr)
+        self.assertFalse(any("SEGREDO" in p.read_text() for p in (self.dir / "ws").rglob("*.md")))
+
+
 class TournamentTest(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp())
